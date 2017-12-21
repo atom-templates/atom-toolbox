@@ -1,0 +1,165 @@
+#!/usr/bin/env node
+
+const program = require('commander');
+const chalk = require('chalk');
+const path = require('path');
+const home = require('user-home');
+const tildify = require('tildify');
+const ora = require('ora');
+const exists = require('fs').existsSync;
+const inquirer = require('inquirer');
+const download = require('download-git-repo');
+const rm = require('rimraf').sync;
+
+
+const localPath = require('../lib/local-path');
+const generate = require('../lib/generate');
+
+
+const isLocalPath = localPath.isLocalPath;
+const getTemplatePath = localPath.getTemplatePath;
+
+program
+    .usage('<template-name> [project-name]')
+    .option('-c, --clone', 'use git clone')
+    .option('--offline', 'use cached template');
+
+/**
+ * Help.
+ */
+
+program.on('--help', () => {
+    console.log('   Examples:');
+    console.log();
+    console.log(chalk.gray('   # create a new project with an webpack template'));
+    console.log('   $ atom init webpack my-project');
+    console.log();
+    console.log(chalk.gray('   # create a new project with an fis3 template'));
+    console.log('   $ atom init fis3 my-project');
+    console.log();
+});
+
+// 判断是否命令参数比较少，如果较少，则直接返回
+
+program.parse(process.argv);
+if (program.args.length < 1) {
+    return program.help();
+}
+
+
+// 取要创建的模板名称，有两种情况，webpack、fis3
+let template = program.args[0];
+
+// 要定义的项目名称，例如my-project，如果不定义则默认在当前文件夹中生成
+const projectName = program.args[1];
+
+const clone = program.clone || false;
+
+// 判断是否有项目名称
+const noProjectName = !projectName || projectName == '.';
+
+// 如果没有写项目名称，则以当前文件夹作为路径
+const name = noProjectName ? path.relative('../', process.cwd()) : projectName;
+
+const to = path.resolve(projectName || '.');
+
+const tmp = path.join(home, '.atom-templates', template.replace(/\//g, '-'));
+
+
+// 如果参数中使用离线的，则
+if (program.offline) {
+    console.log(`> Use cached template at ${chalk.yellow(tildify(tmp))}`);
+    template = tmp;
+}
+
+
+// 判断要保存的路径是否存在，如果存在，则保存在当前目录下，否则保存在生成的目录下
+if (exists(to)) {
+    inquirer.prompt([{
+        type: 'confirm',
+        message: noProjectName
+            ? 'Generate project in current directory?'
+            : 'Target directory exists. Continue?',
+        name: 'ok'
+    }]).then(answers => {
+        // 如果选择了ok，则表示继续
+        if (answers.ok) {
+            run();
+        }
+    });
+}
+else {
+    run();
+}
+
+process.on('exit', () => {
+    console.log();
+});
+
+
+
+/**
+ * 下载和成功项目目录
+ */
+function run () {
+
+    // 判断是否为本地目录，本地目录即为采用offline离线的模式，否则即为从远程拉取
+    if (isLocalPath(template)) {
+        const templatePath = getTemplatePath(template);
+        console.log('templatePath', templatePath);
+        // 判断是否存在缓存的模板
+        if (exists(templatePath)) {
+            generate(name, templatePath, to, err => {
+                if (err) {
+                    console.log(chalk.red(err));
+                }
+                console.log();
+                console.log(chalk.green('生成' + name));
+            });
+        }
+        else {
+            console.log(chalk.red('没有找到本地模板'));
+        }
+    }
+    else {
+        // 使用官方线上模板
+        const officialTemplate = 'atom-templates/' + template;
+        downloadAndGenerate(officialTemplate);
+    }
+}
+
+
+/**
+ * 从远程仓库中下载模板
+ *
+ * @param {string} template 模板名称
+ */
+
+function downloadAndGenerate (template) {
+    const spinner = ora('开始下载');
+    spinner.start();
+    if (exists(tmp)) {
+        rm(tmp);
+    }
+
+    download(template, tmp, {clone}, error => {
+        // 下载完成
+        spinner.stop();
+        if (error) {
+            console.log(chalk.red('下载失败' + template + ': ' + error.message.trim()));
+            return;
+        }
+        generate(name, tmp, to, err => {
+            if (err) {
+                console.log(chalk.red(err));
+            }
+            else {
+                console.log(chalk.green('生成成功~'));
+            }
+            console.log();
+        });
+    });
+}
+
+
+
