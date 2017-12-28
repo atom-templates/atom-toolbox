@@ -1,9 +1,11 @@
 {
   "name": "atom-toolbox",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "a simple cli for scaffolding atom projects.",
   "bin": {
     "atom": "bin/atom",
+    "atb": "bin/atom",
+    "acli": "bin/atom",
     "atom-init": "bin/atom-init"
   },
   "repository": {
